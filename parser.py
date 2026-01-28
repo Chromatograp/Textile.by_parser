@@ -5,6 +5,9 @@ from random import choice
 import traceback
 import json
 import schedule
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure, OperationFailure
+
 
 # Заголовки для входа на сайт:
 
@@ -29,7 +32,7 @@ def random_headers():
 def parse(url):
 
     response=requests.get(url=url, headers=random_headers())
-    soup=BeautifulSoup(response.text, 'lxml')
+    soup=BeautifulSoup(response.text, 'html.parser')
 
     container_divs=soup.find_all('div', class_=re.compile('banner banner'))
     names=soup.select('div.b-info')
@@ -49,7 +52,7 @@ def parse(url):
     for link in links:
         try:
             page_response=requests.get(link)
-            page_soup=BeautifulSoup(page_response.text, 'lxml')
+            page_soup=BeautifulSoup(page_response.text, 'html.parser')
             special_link=page_soup.find_all('div', class_='image')
             new_link=[element.find('a')['href'] for element in special_link]
             dict_url[link]=new_link
@@ -65,13 +68,13 @@ def parse(url):
 
     for key, value in dict_url.items():
         cat_url=requests.get(key) # Получение ссылки на страницу с наименованиями товаров для каждой категории
-        page=BeautifulSoup(cat_url.text, 'lxml')
+        page=BeautifulSoup(cat_url.text, 'html.parser')
         categories=page.find('div', class_='col-sm-5').get_text(strip=True)
         final_dict[categories]={}
         while page_num<=count_urls:
             for i in value:
                 tov_url=requests.get(i, headers=random_headers()) # Получение ссылки на страницу товара с характеристиками
-                tov=BeautifulSoup(tov_url.text, 'lxml')
+                tov=BeautifulSoup(tov_url.text, 'html.parser')
 
                 characteristics_1=tov.find('div', class_='col-sm-5') # Контейнер с основными характеристиками товара
                 characteristics_2=tov.find('ul', class_='breadcrumb') # Контейнер с категорией товара
@@ -172,10 +175,30 @@ url='https://textile.by/'
 
 # Настройка запуска парсера через каждые 5 часов:
 
-schedule.every(5).hours.do(parse(url))
+schedule.every(5).hours.do(parse, url)
 data=parse(url)
+print(len(data))
 
 # Формирование файла JSON с результатами:
 
 with open('textile.json', 'w', encoding='utf-8') as f:
     json.dump(data, f, ensure_ascii=False, indent=4)
+
+mongo_url = "mongodb://localhost:27017"
+db_name = "textile_data"
+collection = "textile_products"
+
+try:
+    client = MongoClient(mongo_url)
+    client.admin.command('ping')
+    db = client[db_name]
+    collection = db[collection]
+    insert_result = collection.insert_one(data)
+    client.close()
+except ConnectionFailure:
+    print('Ошибка подключения')
+except OperationFailure as e:
+    print(f'Ошибка операции с базой данных {e}')
+except Exception as e:
+    print(f'Ошибка {e}')
+    print(traceback.format_exc())
