@@ -65,12 +65,8 @@ def parse(url):
     page_num=0
 
 # Получение характеристик товаров и итогового словаря со значениями:
-
+    final_dict=[]
     for key, value in dict_url.items():
-        cat_url=requests.get(key) # Получение ссылки на страницу с наименованиями товаров для каждой категории
-        page=BeautifulSoup(cat_url.text, 'html.parser')
-        categories=page.find('div', class_='col-sm-5').get_text(strip=True)
-        final_dict[categories]={}
         while page_num<=count_urls:
             for i in value:
                 tov_url=requests.get(i, headers=random_headers()) # Получение ссылки на страницу товара с характеристиками
@@ -98,14 +94,14 @@ def parse(url):
                     """
                     characteristics_dict = {}
                     art=characteristics_1.select_one('.model').get_text(separator=' ', strip=True)
-                    price=characteristics_1.select_one('div', class_='price').get_text(strip=True)
+                    price=characteristics_1.find('ul', class_='list-inline').find_all('li')[0].get_text(strip=True)[:-2]
                     man=characteristics_1.find('a', class_='manufacturer').get_text(strip=True)
                     head=''.join(characteristics_1.find('h1').text).replace('\n', '').replace('\xa0', '')
                     hashes=characteristics_1.find('div', class_='hpmodel_type_images hpm-type-images')
                     type=characteristics_2.select('li')[1].get_text(strip=True)
                     characteristics_dict['Артикул товара']=re.sub(r'\s+', ' ', art).strip()
                     characteristics_dict['URL страницы']=i
-                    characteristics_dict['Стоимость']=price
+                    characteristics_dict['Стоимость']=float(price)
                     characteristics_dict['Производитель']=man
                     characteristics_dict['Тип']=type
                     categories_=characteristics_2.find_all('li')
@@ -153,23 +149,19 @@ def parse(url):
                     else:
                         characteristics_dict['Описание'] = []
 
-                    final_dict[categories][head]=characteristics_dict
+#                    if characteristics_dict not in final_dict:
+                    final_dict.append(characteristics_dict)
 
                     page_num+=1
-                    print(page_num)
+                    print(f'Номер страницы: {page_num}')
                     continue
                 except Exception as e:
                     print(f'Ошибка при запросе {cat_url}: {e}')
                     print(traceback.format_exc())
                     page_num+=1
                     continue
-
             break
-
-# Очистка словаря от пустых значений:
-
-    filtered_dict={k: v for k, v in final_dict.items() if k and v}
-    return filtered_dict
+    return final_dict
 
 url='https://textile.by/'
 
@@ -177,8 +169,7 @@ url='https://textile.by/'
 
 schedule.every(5).hours.do(parse, url)
 data=parse(url)
-print(len(data))
-
+print(f'Всего: {len(data)}')
 # Формирование файла JSON с результатами:
 
 with open('textile.json', 'w', encoding='utf-8') as f:
@@ -189,12 +180,17 @@ db_name = "textile_data"
 collection = "textile_products"
 
 try:
-    client = MongoClient(mongo_url)
-    client.admin.command('ping')
-    db = client[db_name]
-    collection = db[collection]
-    insert_result = collection.insert_one(data)
-    client.close()
+    with MongoClient(mongo_url) as client:
+        client.admin.command('ping')
+        db = client[db_name]
+        collection = db[collection]
+        print(f'До удаления: {collection.count_documents({})}')
+        deletion = collection.delete_many({})
+        print(f'Удалено: {deletion.deleted_count}')
+        print(f'После удаления: {collection.count_documents({})}')
+        inserted = collection.insert_many(data)
+        print(f'вставлено: {len(inserted.inserted_ids)}')
+        client.close()
 except ConnectionFailure:
     print('Ошибка подключения')
 except OperationFailure as e:
