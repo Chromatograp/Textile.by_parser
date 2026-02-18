@@ -149,7 +149,6 @@ def parse(url):
                     else:
                         characteristics_dict['Описание'] = []
 
-#                    if characteristics_dict not in final_dict:
                     final_dict.append(characteristics_dict)
 
                     page_num+=1
@@ -169,11 +168,13 @@ url='https://textile.by/'
 
 schedule.every(5).hours.do(parse, url)
 data=parse(url)
-print(f'Всего: {len(data)}')
+
 # Формирование файла JSON с результатами:
 
 with open('textile.json', 'w', encoding='utf-8') as f:
     json.dump(data, f, ensure_ascii=False, indent=4)
+
+# Запись результата в базу данных MongoDB:
 
 mongo_url = "mongodb://localhost:27017"
 db_name = "textile_data"
@@ -184,12 +185,8 @@ try:
         client.admin.command('ping')
         db = client[db_name]
         collection = db[collection]
-        print(f'До удаления: {collection.count_documents({})}')
         deletion = collection.delete_many({})
-        print(f'Удалено: {deletion.deleted_count}')
-        print(f'После удаления: {collection.count_documents({})}')
         inserted = collection.insert_many(data)
-        print(f'вставлено: {len(inserted.inserted_ids)}')
         client.close()
 except ConnectionFailure:
     print('Ошибка подключения')
